@@ -1,0 +1,95 @@
+/* 전체적인 레이아웃과 폰트 설정 */
+body, html {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background-color: #131722;
+    color: #d1d4dc;
+}
+
+/* ✨✨✨ 핵심 수정: body를 flex 컨테이너로 만들어 자식 요소를 중앙 정렬 ✨✨✨ */
+body {
+    display: flex;
+    justify-content: center; /* 수평 중앙 정렬 */
+    align-items: flex-start; /* 수직 상단 정렬 */
+    min-height: 100vh; /* 최소 높이를 화면 전체로 설정 */
+    padding: 2rem 1rem; /* 상하, 좌우 여백 추가 */
+    box-sizing: border-box;
+}
+
+.app-container {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 1920px; /* 대시보드의 최대 너비 (더 큰 화면에서는 여백이 보임) */
+    box-sizing: border-box;
+}
+
+h1 {
+    text-align: center;
+    margin-top: 0;
+    margin-bottom: 1em;
+    color: white;
+    flex-shrink: 0;
+}
+
+/* 컨트롤 패널 (드롭다운 메뉴) 스타일 */
+.controls {
+    margin-bottom: 1.5em;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 15px;
+    flex-shrink: 0;
+}
+
+.controls span {
+    font-weight: bold;
+    color: #8392A5;
+}
+
+.controls select {
+    padding: 5px;
+    background-color: #2a2e39;
+    color: #d1d4dc;
+    border: 1px solid #485c7b;
+    border-radius: 4px;
+}
+
+/* 차트 그리드 반응형 설정 */
+.chart-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+    gap: 20px;
+    flex-grow: 1;
+    width: 100%;
+    /* 뷰포트 높이에 따라 그리드 전체의 높이가 유연하게 조절되도록 함 */
+    min-height: 70vh; 
+}
+
+.chart-wrapper {
+    position: relative;
+    border: 1px solid #363a45;
+    background-color: #181A20;
+    border-radius: 8px;
+    display: flex;
+    overflow: hidden;
+    min-height: 350px; /* 차트의 최소 높이 보장 */
+    min-width: 600px; /* 차트의 최소 너비 보장 */
+}
+
+/* 로딩/에러 텍스트 스타일 */
+.loading-text {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    font-size: 1.2em;
+    color: #8392A5;
+    width: 100%;
+    height: 100%;
+    text-align: center;
+}
