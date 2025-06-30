@@ -13,7 +13,7 @@ from datetime import datetime, timezone, timedelta
 
 warnings.filterwarnings('ignore', category=RuntimeWarning)
 
-# --- 설정 (기존과 동일) ---
+# --- 설정 ---
 CHART_TYPE = 'Heikin-Ashi'
 FETCH_COUNT = 200
 COIN_LIST = ['BTCUSDT', 'ETHUSDT', 'XRPUSDT', 'TRXUSDT', 'ETCUSDT', 'BCHUSDT']
@@ -23,22 +23,31 @@ KERNEL_RSI_LENGTH, KERNEL_RSI_BANDWIDTH = 14, 4
 K_RSI_LONG_ENTRY, K_RSI_SHORT_ENTRY = 30, 70
 KLINE_REFRESH_INTERVAL_SECONDS = 3600
 
-TELEGRAM_BOT_TOKEN = "여기에_텔레그램_봇_토큰을_붙여넣으세요"
-TELEGRAM_CHAT_ID = "여기에_텔레그램_채팅_ID를_붙여넣으세요"
+# ✨✨✨ 1. 텔레그램 정보 설정 ✨✨✨
+# 아래 두 줄에 발급받으신 텔레그램 봇 토큰과 채팅 ID를 입력하세요.
+TELEGRAM_BOT_TOKEN = "7970195743:AAEpXF8cYE5J3HEDZKX0Y3WVmfq3IL6m0Ek"
+TELEGRAM_CHAT_ID = "6484955496"
 
 client = Client()
 
 app_data_cache = {}
 lock = threading.Lock()
 
-# --- 헬퍼 함수 (기존과 동일) ---
+# --- 헬퍼 함수 ---
 def send_telegram_notification(message):
+    """텔레그램으로 메시지를 전송하는 함수"""
     token, chat_id = TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
-    if token.startswith("여기에") or chat_id.startswith("여기에"): return
+    # 토큰이나 ID가 기본값일 경우, 알림을 보내지 않습니다.
+    if token.startswith("실제") or chat_id.startswith("실제"):
+        print("Telegram-Benachrichtigung übersprungen: Token oder Chat-ID nicht festgelegt.")
+        return
     try:
-        requests.get(f"https://api.telegram.org/bot{token}/sendMessage", params={'chat_id': chat_id, 'text': message}).raise_for_status()
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        params = {'chat_id': chat_id, 'text': message}
+        response = requests.get(url, params=params)
+        response.raise_for_status() # 오류 발생 시 예외 처리
     except requests.exceptions.RequestException as e:
-        print(f"Telegram Error: {e}")
+        print(f"Telegram-Fehler beim Senden der Benachrichtigung: {e}")
 
 def calculate_heikin_ashi(df):
     ha_df = df.copy()
@@ -97,29 +106,22 @@ def get_interval_seconds(interval_str):
     except (ValueError, IndexError): return 0
     return 0
 
-# ✨✨✨ 핵심 수정: process_dataframe 함수 이름 변경 및 역할 명확화 ✨✨✨
 def calculate_indicators(df):
-    """주어진 DataFrame에 대해 모든 보조지표와 차트 데이터를 계산하여 하나의 딕셔너리로 반환합니다."""
     if df is None or df.empty:
         return None
 
-    # 모든 계산은 원본 df의 복사본으로 수행
     df_copy = df.copy()
-
     stoch_rsi = df_copy.ta.stochrsi()
     if stoch_rsi is None or stoch_rsi.empty: return None
 
     stoch_buy, stoch_sell = find_stoch_rsi_signals(stoch_rsi)
-
     rsi = df_copy.ta.rsi(length=KERNEL_RSI_LENGTH)
     if rsi is None or rsi.dropna().empty: return None
 
     kernel_rsi_values = kernel_regression(rsi.dropna().values, KERNEL_RSI_BANDWIDTH)
     kernel_rsi = pd.Series(kernel_rsi_values, index=rsi.dropna().index)
-
     krsi_long, krsi_short = find_kernel_rsi_signals(kernel_rsi)
 
-    # 캔들차트(plot_df) 계산도 이 함수 안에서 함께 처리
     plot_df = calculate_heikin_ashi(df_copy) if CHART_TYPE == 'Heikin-Ashi' else df_copy
 
     return {
@@ -144,12 +146,11 @@ class CoinWorker(threading.Thread):
         self.new_data_event = threading.Event()
 
     def _indicator_calculation_loop(self):
-        """백그라운드에서 모든 지표 계산을 담당하고, 전역 캐시를 원자적으로 업데이트합니다."""
+        """백그라운드에서 모든 지표 계산, 캐시 업데이트, 알림 발송을 담당합니다."""
         print(f"[{time.strftime('%H:%M:%S')}] {self.symbol}: Indicator calculation thread started.")
         while True:
             self.new_data_event.wait(timeout=10)
             if self.new_data_event.is_set():
-                # ✨ 1. 이 스레드에서 사용할 데이터만 지역 변수로 복사 (동시성 문제 방지)
                 local_kline_cache = self.kline_data_cache.copy()
 
                 for interval in TIMEFRAME_OPTIONS:
@@ -157,13 +158,29 @@ class CoinWorker(threading.Thread):
                     if df is None:
                         continue
                     
-                    # ✨ 2. 캔들차트와 모든 보조지표를 한 번에 계산
-                    # 계산된 결과는 완전히 일관성이 보장됨
+                    # ✨✨✨ 2. 알림 발송을 위해 이전 데이터 상태를 확인 ✨✨✨
+                    with lock:
+                        # 이전 데이터를 가져옵니다. 데이터가 없으면 None이 됩니다.
+                        previous_data_package = app_data_cache.get(self.symbol, {}).get(interval)
+
+                    # 새로운 지표와 신호를 계산합니다.
                     complete_data_package = calculate_indicators(df)
                     
                     if complete_data_package:
-                        # ✨ 3. Lock을 걸고 전역 캐시를 통째로 교체 (업데이트가 아닌 교체)
-                        # 이렇게 하면 데이터 불일치 상태가 발생하지 않음
+                        # ✨✨✨ 3. 새로운 신호 발생 여부를 확인하고 알림 발송 ✨✨✨
+                        # 이전 데이터가 존재해야 새로운 신호를 비교할 수 있습니다.
+                        if previous_data_package:
+                            # KRSI Long 신호: 이전에는 False였고, 지금은 True인 경우
+                            if complete_data_package['krsi_long'].iloc[-1] and not previous_data_package['krsi_long'].iloc[-1]:
+                                message = f"🚀 [{self.symbol}/{interval}] KRSI Long 신호 발생!"
+                                send_telegram_notification(message)
+                            
+                            # KRSI Short 신호: 이전에는 False였고, 지금은 True인 경우
+                            if complete_data_package['krsi_short'].iloc[-1] and not previous_data_package['krsi_short'].iloc[-1]:
+                                message = f"🔻 [{self.symbol}/{interval}] KRSI Short 신호 발생!"
+                                send_telegram_notification(message)
+
+                        # ✨✨✨ 4. 계산된 최신 데이터로 전역 캐시를 업데이트 ✨✨✨
                         with lock:
                             if self.symbol not in app_data_cache:
                                 app_data_cache[self.symbol] = {}
@@ -173,8 +190,6 @@ class CoinWorker(threading.Thread):
             time.sleep(0.1)
 
     def run(self):
-        """이 스레드는 가격 데이터를 가져와 내부 캐시(`kline_data_cache`)를 업데이트하고,
-           계산 스레드에 신호를 보내는 역할만 합니다."""
         print(f"[{time.strftime('%H:%M:%S')}] Price update worker started for {self.symbol}")
         self.indicator_thread.start()
 
@@ -185,7 +200,6 @@ class CoinWorker(threading.Thread):
             if now - self.last_kline_fetch_time > KLINE_REFRESH_INTERVAL_SECONDS:
                 print(f"[{time.strftime('%H:%M:%S')}] {self.symbol}: Performing full kline data refresh...")
                 for interval in TIMEFRAME_OPTIONS:
-                    # ✨ 4. 전역 캐시가 아닌, 이 인스턴스에만 속한 `kline_data_cache`를 업데이트
                     self.kline_data_cache[interval] = get_binance_futures_candles(self.symbol, interval, FETCH_COUNT)
                     time.sleep(0.05)
                 self.last_kline_fetch_time = now
@@ -226,7 +240,6 @@ class CoinWorker(threading.Thread):
                     self.kline_data_cache[interval] = df_copy
                     data_updated = True
 
-            # ✨ 5. 데이터에 변경이 있을 때만 계산 스레드에 신호를 보냄
             if data_updated:
                 self.new_data_event.set()
 
