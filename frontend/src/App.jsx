@@ -106,7 +106,7 @@ function App() {
                 console.error("Background fetch failed:", error);
             }
         };
-        const interval = setInterval(backgroundFetch, 5000);
+        const interval = setInterval(backgroundFetch, 1000);
         return () => clearInterval(interval);
     }, [selectedCoin]);
     
